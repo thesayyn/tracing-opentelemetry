@@ -7,8 +7,10 @@ use opentelemetry::{
 };
 use std::cell::RefCell;
 use std::thread;
+use std::time::Duration;
 #[cfg(not(all(target_arch = "wasm32", not(target_os = "wasi"))))]
 use std::time::Instant;
+use std::time::SystemTime;
 use std::{any::TypeId, borrow::Cow};
 use std::{fmt, vec};
 use std::{marker, mem::take};
@@ -154,7 +156,7 @@ fn str_to_status(s: &str) -> otel::Status {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct SpanBuilderUpdates {
     name: Option<Cow<'static, str>>,
     span_kind: Option<SpanKind>,
@@ -448,6 +450,8 @@ struct SemConvConfig {
 struct SpanAttributeVisitor<'a> {
     span_builder_updates: &'a mut SpanBuilderUpdates,
     sem_conv_config: SemConvConfig,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
 }
 
 impl SpanAttributeVisitor<'_> {
@@ -478,6 +482,11 @@ impl field::Visit for SpanAttributeVisitor<'_> {
     ///
     /// [`Span`]: opentelemetry::trace::Span
     fn record_i64(&mut self, field: &field::Field, value: i64) {
+        match field.name() {
+            "otel.start_time" => self.start_time = Some(value),
+            "otel.end_time" => self.end_time = Some(value),
+            _ => {}
+        };
         self.record(KeyValue::new(field.name(), value));
     }
 
@@ -1077,9 +1086,23 @@ where
         }
 
         let mut updates = SpanBuilderUpdates::default();
-        attrs.record(&mut SpanAttributeVisitor {
+        let mut visitor = SpanAttributeVisitor {
             span_builder_updates: &mut updates,
             sem_conv_config: self.sem_conv_config,
+            end_time: None,
+            start_time: None,
+        };
+        attrs.record(&mut visitor);
+
+        if let Some(start_time) = visitor.start_time {
+            let duration = Duration::from_secs(start_time as u64);
+            builder =
+                builder.with_start_time(SystemTime::UNIX_EPOCH.checked_add(duration).unwrap());
+        }
+
+        let end_time = visitor.end_time.map(|end_time| {
+            let duration = Duration::from_secs(end_time as u64);
+            SystemTime::UNIX_EPOCH.checked_add(duration).unwrap()
         });
 
         let mut status = Status::Unset;
@@ -1090,7 +1113,7 @@ where
                 parent_cx,
                 status,
             },
-            end_time: None,
+            end_time: end_time,
         });
     }
 
@@ -1130,7 +1153,10 @@ where
         let mut extensions = span.extensions_mut();
 
         if let Some(otel_data) = extensions.get_mut::<OtelData>() {
-            otel_data.end_time = Some(crate::time::now());
+            if otel_data.end_time.is_none() {
+                otel_data.end_time = Some(crate::time::now());
+            }
+
             if self.context_activation {
                 GUARD_STACK.with(|stack| stack.borrow_mut().pop(id));
             }
@@ -1159,6 +1185,8 @@ where
         values.record(&mut SpanAttributeVisitor {
             span_builder_updates: &mut updates,
             sem_conv_config: self.sem_conv_config,
+            end_time: None,
+            start_time: None,
         });
         let mut extensions = span.extensions_mut();
         if let Some(otel_data) = extensions.get_mut::<OtelData>() {
