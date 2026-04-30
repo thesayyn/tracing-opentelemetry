@@ -17,9 +17,9 @@ Utilities for adding [OpenTelemetry] interoperability to [`tracing`].
 [Documentation][docs-url] | [Chat][discord-url]
 
 [crates-badge]: https://img.shields.io/crates/v/tracing-opentelemetry.svg
-[crates-url]: https://crates.io/crates/tracing-opentelemetry/0.22.0
+[crates-url]: https://crates.io/crates/tracing-opentelemetry/
 [docs-badge]: https://docs.rs/tracing-opentelemetry/badge.svg
-[docs-url]: https://docs.rs/tracing-opentelemetry/0.22.0/tracing_opentelemetry
+[docs-url]: https://docs.rs/tracing-opentelemetry/
 [docs-master-badge]: https://img.shields.io/badge/docs-master-blue
 [docs-master-url]: https://tracing-rs.netlify.com/tracing_opentelemetry
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
@@ -76,7 +76,7 @@ $ cargo run --example opentelemetry-otlp
 $ firefox http://localhost:16686/
 ```
 
-![Jaeger UI](trace.png)
+![Jaeger UI](https://raw.githubusercontent.com/tokio-rs/tracing-opentelemetry/refs/heads/v0.1.x/trace.png)
 
 ## Feature Flags
 
