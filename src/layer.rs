@@ -1252,11 +1252,7 @@ where
         let span = ctx.span(id).expect("Span not found, this is a bug");
         let mut extensions = span.extensions_mut();
 
-        if let Some(otel_data) = extensions.get_mut::<OtelData>() {
-            if otel_data.end_time.is_none() {
-                otel_data.end_time = Some(crate::time::now());
-            }
-
+        if let Some(_otel_data) = extensions.get_mut::<OtelData>() {
             if self.context_activation {
                 GUARD_STACK.with(|stack| stack.borrow_mut().pop(id));
             }
@@ -1282,19 +1278,36 @@ where
     fn on_record(&self, id: &Id, values: &Record<'_>, ctx: Context<'_, S>) {
         let span = ctx.span(id).expect("Span not found, this is a bug");
         let mut updates = SpanBuilderUpdates::default();
-        values.record(&mut SpanAttributeVisitor {
+        let mut visitor = SpanAttributeVisitor {
             span_builder_updates: &mut updates,
             sem_conv_config: self.sem_conv_config,
             end_time: None,
             start_time: None,
+        };
+        values.record(&mut visitor);
+
+        let start_time = visitor.start_time.and_then(|start_time| {
+            let duration = Duration::from_secs(start_time as u64);
+            SystemTime::UNIX_EPOCH.checked_add(duration)
         });
+        let end_time = visitor.end_time.and_then(|end_time| {
+            let duration = Duration::from_secs(end_time as u64);
+            SystemTime::UNIX_EPOCH.checked_add(duration)
+        });
+
         let mut extensions = span.extensions_mut();
         if let Some(otel_data) = extensions.get_mut::<OtelData>() {
+            if let Some(end_time) = end_time {
+                otel_data.end_time = Some(end_time);
+            }
             match &mut otel_data.state {
                 OtelDataState::Builder {
                     builder, status, ..
                 } => {
                     // If the builder is present, then update it.
+                    if let Some(start_time) = start_time {
+                        builder.start_time = Some(start_time);
+                    }
                     updates.update(builder, status);
                 }
                 OtelDataState::Context { current_cx, .. } => {
